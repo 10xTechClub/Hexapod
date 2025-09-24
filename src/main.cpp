@@ -8,7 +8,6 @@
 #include <Preferences.h>
 Preferences prefs;
 
-
 //function declarations
 void setServoAngle(int servo, int angle);
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
@@ -19,7 +18,10 @@ void moveForward();
 void stopMovement();
 void executeWalkStep(int step);
 void moveBackward();
-
+void waveHand();
+void danceMove();
+void waveAll_Left();
+void waveAll_Right();
 // WiFi Credentials
 const char *ssid = "10xTC-AP2";
 const char *password = "10xTechClub#";
@@ -45,6 +47,14 @@ int servoPWMValues[18];
 int heightOffset = 0; // default, can be negative (lower) or positive (higher)
 int stride = 40;  // default stride length
 bool walkingForward = true;  // true = forward, false = reverse
+enum MovementDirection {
+  FORWARD,
+  BACKWARD, 
+  TURN_RIGHT,
+  TURN_LEFT
+};
+
+MovementDirection currentDirection = FORWARD;
 
 
 // Movement control variables
@@ -68,7 +78,7 @@ int stepDelay = 500; // Default 500ms between steps (adjustable via UI)
 
 // Walk pattern (4 steps, 6 legs × 3 joints each = 18 values per step)
 // Format: [L1_C,L1_F,L1_T, L2_C,L2_F,L2_T, L3_C,L3_F,L3_T, L4_C,L4_F,L4_T, L5_C,L5_F,L5_T, L6_C,L6_F,L6_T]
-int FemurHeight = 40;
+int FemurHeight = 60;
 
 void generateWalkPattern(int walkPattern[4][18]) {
   // Base positions
@@ -185,6 +195,147 @@ void generateWalkPattern(int walkPattern[4][18]) {
   walkPattern[3][16] = base;           // R6 Femur (down)
   walkPattern[3][17] = base;           // R6 Tibia
 }
+
+// Replace both generateTurnLeftPattern and generateTurnRightPattern with this single optimized function:
+
+void generateTurnPattern(int walkPattern[4][18], bool turnLeft) {
+  int base = 90;
+  
+  // Determine stride direction based on turn direction
+  // For left turn: Group 1 (L1,L2,L3) = +stride, Group 2 (R4,R5,R6) = -stride  
+  // For right turn: Group 1 (L1,L2,L3) = -stride, Group 2 (R4,R5,R6) = +stride
+  int leftStride = turnLeft ? stride : -stride;
+  int rightStride = turnLeft ? stride : -stride;
+  
+  // ---- Step 1 ---- Lift Group 1: L1, L3 and Group 2: R5
+  // L1 (servos 0,1,2)
+  walkPattern[0][0] = base + leftStride;  // L1 Coxa 
+  walkPattern[0][1] = base - FemurHeight; // L1 Femur lift (always - for left side)
+  walkPattern[0][2] = base;               // L1 Tibia
+
+  // L2 (servos 3,4,5) - planted
+  walkPattern[0][3] = base;               // L2 Coxa
+  walkPattern[0][4] = base;               // L2 Femur 
+  walkPattern[0][5] = base;               // L2 Tibia
+
+  // L3 (servos 6,7,8)  
+  walkPattern[0][6] = base + leftStride;  // L3 Coxa
+  walkPattern[0][7] = base - FemurHeight; // L3 Femur lift (always - for left side)
+  walkPattern[0][8] = base;               // L3 Tibia
+
+  // R4 (servos 9,10,11) - planted
+  walkPattern[0][9] = base;               // R4 Coxa
+  walkPattern[0][10] = base;              // R4 Femur
+  walkPattern[0][11] = base;              // R4 Tibia
+
+  // R5 (servos 12,13,14)
+  walkPattern[0][12] = base + rightStride; // R5 Coxa
+  walkPattern[0][13] = base + FemurHeight; // R5 Femur lift (always + for right side)
+  walkPattern[0][14] = base;               // R5 Tibia
+
+  // R6 (servos 15,16,17) - planted
+  walkPattern[0][15] = base;              // R6 Coxa
+  walkPattern[0][16] = base;              // R6 Femur
+  walkPattern[0][17] = base;              // R6 Tibia
+
+  // ---- Step 2 ---- Lower Group 1 and Group 2
+  walkPattern[1][0] = base + leftStride;  // L1 Coxa down
+  walkPattern[1][1] = base;               // L1 Femur down
+  walkPattern[1][2] = base;               // L1 Tibia
+
+  walkPattern[1][3] = base;               // L2 planted
+  walkPattern[1][4] = base;
+  walkPattern[1][5] = base;
+
+  walkPattern[1][6] = base + leftStride;  // L3 Coxa down
+  walkPattern[1][7] = base;               // L3 Femur down
+  walkPattern[1][8] = base;               // L3 Tibia
+
+  walkPattern[1][9] = base;               // R4 planted
+  walkPattern[1][10] = base;
+  walkPattern[1][11] = base;
+
+  walkPattern[1][12] = base + rightStride; // R5 Coxa down
+  walkPattern[1][13] = base;               // R5 Femur down
+  walkPattern[1][14] = base;               // R5 Tibia
+
+  walkPattern[1][15] = base;              // R6 planted
+  walkPattern[1][16] = base;
+  walkPattern[1][17] = base;
+
+  // ---- Step 3 ---- Lift Group 3: L2 and Group 4: R4, R6
+  walkPattern[2][0] = base;               // L1 planted
+  walkPattern[2][1] = base;
+  walkPattern[2][2] = base;
+
+  walkPattern[2][3] = base + leftStride;  // L2 Coxa
+  walkPattern[2][4] = base - FemurHeight; // L2 Femur lift (always - for left side)
+  walkPattern[2][5] = base;               // L2 Tibia
+
+  walkPattern[2][6] = base;               // L3 planted
+  walkPattern[2][7] = base;
+  walkPattern[2][8] = base;
+
+  walkPattern[2][9] = base + rightStride;  // R4 Coxa
+  walkPattern[2][10] = base + FemurHeight; // R4 Femur lift (always + for right side)
+  walkPattern[2][11] = base;               // R4 Tibia
+
+  walkPattern[2][12] = base;              // R5 planted
+  walkPattern[2][13] = base;
+  walkPattern[2][14] = base;
+
+  walkPattern[2][15] = base + rightStride; // R6 Coxa
+  walkPattern[2][16] = base + FemurHeight; // R6 Femur lift (always + for right side)
+  walkPattern[2][17] = base;               // R6 Tibia
+
+  // ---- Step 4 ---- Lower Group 3 and Group 4
+  walkPattern[3][0] = base;               // L1 planted
+  walkPattern[3][1] = base;
+  walkPattern[3][2] = base;
+
+  walkPattern[3][3] = base + leftStride;  // L2 Coxa down
+  walkPattern[3][4] = base;               // L2 Femur down
+  walkPattern[3][5] = base;               // L2 Tibia
+
+  walkPattern[3][6] = base;               // L3 planted
+  walkPattern[3][7] = base;
+  walkPattern[3][8] = base;
+
+  walkPattern[3][9] = base + rightStride;  // R4 Coxa down
+  walkPattern[3][10] = base;               // R4 Femur down
+  walkPattern[3][11] = base;               // R4 Tibia
+
+  walkPattern[3][12] = base;              // R5 planted
+  walkPattern[3][13] = base;
+  walkPattern[3][14] = base;
+
+  walkPattern[3][15] = base + rightStride; // R6 Coxa down
+  walkPattern[3][16] = base;               // R6 Femur down
+  walkPattern[3][17] = base;               // R6 Tibia
+}
+
+
+void moveTurnRight() {
+  if (!isWalking) {
+    isWalking = true;
+    currentDirection = TURN_RIGHT;
+    currentStep = 0;
+    lastStepTime = millis();
+    Serial.println("Started turning right");
+  }
+}
+
+void moveTurnLeft() {
+  if (!isWalking) {
+    isWalking = true;
+    currentDirection = TURN_LEFT;
+    currentStep = 0;
+    lastStepTime = millis();
+    Serial.println("Started turning left");
+  }
+}
+
+
 
 // Complete HTML page with embedded CSS and JavaScript
 const char* htmlPage = R"rawliteral(
@@ -417,6 +568,87 @@ const char* htmlPage = R"rawliteral(
             .btn { width: 100%; margin: 5px 0; }
             .servo-grid { grid-template-columns: 1fr; }
         }
+              .movement-grid {
+    display: grid;
+    grid-template-areas:
+      ". forward ."
+      "left stop right"
+      ". backward .";
+    grid-gap: 10px;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+
+  .movement-grid button {
+    min-width: 120px;
+    min-height: 60px;
+    font-size: 16px;
+    border-radius: 12px;
+    font-weight: bold;
+  }
+
+  .fun-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+  }
+        .control-section {
+            background: rgba(255,255,255,0.7);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .control-title {
+            text-align: center;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .control-slider {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .control-slider label {
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .control-slider input[type="range"] {
+            flex: 1;
+            min-width: 200px;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #e2e8f0;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        .control-slider div {
+            min-width: 100px;
+            text-align: center;
+            font-weight: bold;
+            color: #2d3748;
+            background: #edf2f7;
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #718096;
+        }
     </style>
 </head>
 <body>
@@ -431,61 +663,54 @@ const char* htmlPage = R"rawliteral(
         <div class="movement-controls">
             <div class="movement-title">🚶‍♂️ Hexapod Movement Control</div>
             
-            <!-- Speed Control Section -->
-            <div style="background: rgba(255,255,255,0.7); padding: 20px; border-radius: 10px; margin-bottom: 25px;">
-                <div style="text-align: center; font-weight: bold; color: #2d3748; margin-bottom: 15px; font-size: 1.1em;">
-                    ⚡ Walking Speed Control
+            <!-- Speed Control -->
+            <div class="control-section">
+                <div class="control-title">⚡ Walking Speed Control</div>
+                <div class="control-slider">
+                    <label>Speed:</label>
+                    <input type="range" min="100" max="1000" value="500" id="speedSlider"
+                           onchange="updateSpeed(this.value)" oninput="updateSpeedDisplay(this.value)">
+                    <div id="speedValue">500ms</div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 15px; justify-content: center; flex-wrap: wrap;">
-                    <label style="font-weight: 600; color: #4a5568;">Speed:</label>
-                    <input type="range" min="100" max="1000" value="500" 
-                           style="flex: 1; min-width: 200px; height: 8px; -webkit-appearance: none; appearance: none; background: #e2e8f0; border-radius: 5px; outline: none;"
-                           id="speedSlider" onchange="updateSpeed(this.value)" oninput="updateSpeedDisplay(this.value)">
-                    <div id="speedValue" style="min-width: 100px; text-align: center; font-weight: bold; color: #2d3748; background: #edf2f7; padding: 8px 12px; border-radius: 6px;">
-                        500ms
-                    </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.9em; color: #718096;">
-                    <span>🐰 Fast (100ms)</span>
-                    <span>🚶 Normal (500ms)</span>
+                <div class="slider-labels">
                     <span>🐢 Slow (1000ms)</span>
+                    <span>🚶 Normal (500ms)</span>
+                    <span>🐰 Fast (100ms)</span>
                 </div>
             </div>
 
-            <!-- Stride Length Control Section -->
-            <div style="background: rgba(255,255,255,0.7); padding: 20px; border-radius: 10px; margin-bottom: 25px;">
-                <div style="text-align: center; font-weight: bold; color: #2d3748; margin-bottom: 15px; font-size: 1.1em;">
-                    👣 Stride Length Control
+            <!-- Stride Length Control -->
+            <div class="control-section">
+                <div class="control-title">👣 Stride Length Control</div>
+                <div class="control-slider">
+                    <label>Stride:</label>
+                    <input type="range" min="10" max="90" value="60" id="strideSlider"
+                           onchange="updateStride(this.value)" oninput="updateStrideDisplay(this.value)">
+                    <div id="strideValue">60°</div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 15px; justify-content: center; flex-wrap: wrap;">
-                    <label style="font-weight: 600; color: #4a5568;">Stride:</label>
-                    <input type="range" min="10" max="90" value="40" 
-                            style="flex: 1; min-width: 200px; height: 8px; background: #e2e8f0; border-radius: 5px; outline: none;"
-                            id="strideSlider" onchange="updateStride(this.value)" oninput="updateStrideDisplay(this.value)">
-                    <div id="strideValue" style="min-width: 100px; text-align: center; font-weight: bold; color: #2d3748; background: #edf2f7; padding: 8px 12px; border-radius: 6px;">
-                        60°
-                    </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.9em; color: #718096;">
+                <div class="slider-labels">
                     <span>🐢 Short (10°)</span>
                     <span>👣 Normal (60°)</span>
                     <span>🦘 Long (90°)</span>
                 </div>
             </div>
+        </div>
+<div class="movement-grid">
+  <button class="btn btn-move" style="grid-area: forward;" onclick="startWalking()">🚀 Forward</button>
+  <button class="btn btn-move" style="grid-area: left; background: linear-gradient(45deg, #3182ce, #2c5282);" onclick="startTurnLeft()">↺ Left</button>
+  <button class="btn btn-stop" style="grid-area: stop;" onclick="stopWalking()">🛑 Stop</button>
+  <button class="btn btn-move" style="grid-area: right; background: linear-gradient(45deg, #38a169, #2f855a);" onclick="startTurnRight()">↻ Right</button>
+  <button class="btn btn-move" style="grid-area: backward; background: linear-gradient(45deg, #805ad5, #6b46c1);" onclick="startWalkingBackward()">⬅️ Backward</button>
+</div>
 
-            <div class="movement-buttons">
-            <button class="btn btn-move" onclick="startWalking()" id="walkBtn">🚀 Walk Forward</button>
-            <button class="btn btn-move" onclick="startWalkingBackward()" id="walkBackBtn" 
-                    style="background: linear-gradient(45deg, #805ad5, #6b46c1);">⬅️ Walk Backward</button>
-            <button class="btn btn-stop" onclick="stopWalking()">🛑 Stop</button>
-        </div>
-        
-        <div class="control-buttons">
-            <button class="btn btn-primary" onclick="setAllServos(90)">🎯 Center All (90°)</button>
-            <button class="btn btn-success" onclick="setAllServos(0)">⬅️ Min All (0°)</button>
-            <button class="btn btn-warning" onclick="setAllServos(180)">➡️ Max All (180°)</button>
-            <button class="btn btn-danger" onclick="sweepTest()">🔥 Sweep Test</button>
-        </div>
+<div class="fun-buttons">
+  <button class="btn btn-primary" onclick="waveHand()">👋 Wave Hand</button>
+  <button class="btn btn-success" onclick="danceMove()">💃 Dance</button>
+  <button class="btn btn-warning" onclick="waveAll_Left()">🌊 Wave All (Left)</button>
+  <button class="btn btn-warning" onclick="waveAll_Right()">🌊 Wave All (Right)</button>
+  <button class="btn btn-primary" onclick="setAllServos(90)">🎯 Center All (90°)</button>
+</div>
+
 
         <div class="pca-section">
             <div class="pca-header">PCA9685 Controller 2 (Address 0x41) - Left Side: Legs 1,2,3</div>
@@ -497,7 +722,7 @@ const char* htmlPage = R"rawliteral(
             <div class="servo-grid" id="pca1Grid"></div>
         </div>
     </div>
-
+    </div>
     <script>
         let ws;
         let servoData = {};
@@ -690,22 +915,28 @@ function updateHeightDisplay(value) {
             console.log('Speed updated from server:', speed, 'ms');
         }
 
-        function updateWalkStatus(isWalking, step) {
-            const walkStatus = document.getElementById('walkStatus');
-            const walkBtn = document.getElementById('walkBtn');
-            
-            if (isWalking) {
-                walkStatus.style.display = 'block';
-                walkStatus.className = 'status walking';
-                walkStatus.innerHTML = `🚶‍♂️ Walking - Step ${step + 1}/4`;
-                walkBtn.innerHTML = '⏸️ Pause Walk';
-                walking = true;
-            } else {
-                walkStatus.style.display = 'none';
-                walkBtn.innerHTML = '🚀 Walk Forward';
-                walking = false;
-            }
+        function updateWalkStatus(isWalking, step, direction) {
+    const walkStatus = document.getElementById('walkStatus');
+    const walkBtn = document.getElementById('walkBtn');
+    
+    if (isWalking) {
+        walkStatus.style.display = 'block';
+        walkStatus.className = 'status walking';
+        let directionText = '';
+        switch(direction) {
+            case 0: directionText = 'Forward'; break;
+            case 1: directionText = 'Backward'; break;
+            case 2: directionText = 'Right'; break;
+            case 3: directionText = 'Left'; break;
+            default: directionText = 'Forward';
         }
+        walkStatus.innerHTML = `🚶‍♂️ Walking ${directionText} - Step ${step + 1}/4`;
+        walking = true;
+    } else {
+        walkStatus.style.display = 'none';
+        walking = false;
+    }
+}
 
         function setAllServos(angle) {
             if (sweeping || walking) return;
@@ -726,6 +957,16 @@ function updateHeightDisplay(value) {
         console.log('Started walking backward');
     }
 }
+
+
+function waveHand() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = JSON.stringify({ type: 'waveHand' });
+        ws.send(message);
+        console.log('Sent waveHand command');
+    }
+}
+
 
 
         function sweepTest() {
@@ -766,9 +1007,52 @@ function updateHeightDisplay(value) {
             }, 30000);
         }
 
-        function updateServoDisplay(servo, angle, pwm) {
-            servoData[servo] = { angle: angle, pwm: pwm };
-            document.getElementById('value' + servo).textContent = angle + '°';
+        function startTurnRight() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = JSON.stringify({
+            type: 'startTurnLeft'
+        });
+        ws.send(message);
+        console.log('Started turning right');
+    }
+}
+
+function danceMove() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = JSON.stringify({ type: 'danceMove' });
+        ws.send(message);
+        console.log('Sent danceMove command');
+    }
+}
+
+
+function startTurnLeft() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = JSON.stringify({
+            type: 'startTurnRight'
+        });
+        ws.send(message);
+        console.log('Started turning left');
+    }
+}
+function waveAll_Left() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = JSON.stringify({ type: 'waveAll_Left' });
+        ws.send(message);
+        console.log('Sent waveAll_Left command');
+    }
+}
+function waveAll_Right() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = JSON.stringify({ type: 'waveAll_Right' });
+        ws.send(message);
+        console.log('Sent waveAll_Right command');
+    }
+}
+
+function updateServoDisplay(servo, angle, pwm) {
+    servoData[servo] = { angle: angle, pwm: pwm };
+    document.getElementById('value' + servo).textContent = angle + '°';
             document.getElementById('pwm' + servo).textContent = 'PWM: ' + pwm;
             document.getElementById('slider' + servo).value = angle;
         }
@@ -876,6 +1160,8 @@ void loop() {
       doc["type"] = "walkStatus";
       doc["walking"] = isWalking;
       doc["step"] = currentStep;
+      doc["direction"] = (int)currentDirection; // Add this line
+
       
       String message;
       serializeJson(doc, message);
@@ -928,21 +1214,31 @@ void setServoAngle(int servo, int angle) {
   servoPositions[servo] = adjustedAngle;
   servoPWMValues[servo] = pwmValue;
 }
+
 void executeWalkStep(int step) {
   Serial.println("Executing walk step: " + String(step + 1));
 
   int targetPattern[4][18];
-  generateWalkPattern(targetPattern);
+  
+  // Generate the appropriate pattern based on direction
+  if (currentDirection == FORWARD || currentDirection == BACKWARD) {
+    generateWalkPattern(targetPattern);
+    if (currentDirection == BACKWARD) {
+      step = 3 - step;
+    }
+  } else if (currentDirection == TURN_RIGHT) {
+    generateTurnPattern(targetPattern, false); // false = turn right
+  } else if (currentDirection == TURN_LEFT) {
+    generateTurnPattern(targetPattern, true);  // true = turn left
+  }
 
-  // For reverse, use steps in reverse order: 3,2,1,0 instead of 0,1,2,3
-  int actualStep = walkingForward ? step : (3 - step);
-
-  const int interpSteps = 10; // higher = smoother, slower
+  // Rest of your interpolation code remains the same...
+  const int interpSteps = 10;
 
   for (int s = 1; s <= interpSteps; s++) {
     for (int i = 0; i < 18; i++) {
       int startAngle = servoPositions[i];        
-      int endAngle   = targetPattern[actualStep][i];   // Use actualStep instead of step
+      int endAngle   = targetPattern[step][i];
       int interpAngle = startAngle + (endAngle - startAngle) * s / interpSteps;
 
       setServoAngle(i, interpAngle);
@@ -956,28 +1252,26 @@ void executeWalkStep(int step) {
   }
 }
 
-// 3. Add a moveBackward function (add this after your moveForward function)
-void moveBackward() {
-  if (!isWalking) {
-    isWalking = true;
-    walkingForward = false;  // Set direction to reverse
-    currentStep = 0;
-    lastStepTime = millis();
-    Serial.println("Started walking backward");
-  }
-}
-
-// 4. Update moveForward function to set direction (replace your existing moveForward)
+// 5. Update your existing moveForward and moveBackward functions
 void moveForward() {
   if (!isWalking) {
     isWalking = true;
-    walkingForward = true;   // Set direction to forward
+    currentDirection = FORWARD;
     currentStep = 0;
     lastStepTime = millis();
     Serial.println("Started walking forward");
   }
 }
 
+void moveBackward() {
+  if (!isWalking) {
+    isWalking = true;
+    currentDirection = BACKWARD;
+    currentStep = 0;
+    lastStepTime = millis();
+    Serial.println("Started walking backward");
+  }
+}
 void stopMovement() {
   if (isWalking) {
     isWalking = false;
@@ -1082,7 +1376,26 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       else if (doc["type"] == "stopWalk") {
         stopMovement();
       }
-      else if (doc["type"] == "setSpeed") {
+    else if (doc["type"] == "startTurnRight") {
+        moveTurnRight();
+    }
+    else if (doc["type"] == "startTurnLeft") {
+        moveTurnLeft();
+    }
+    else if (doc["type"] == "waveHand") {
+        waveHand();
+    }
+    else if (doc["type"] == "danceMove") {
+    danceMove();
+    }
+    else if (doc["type"] == "waveAll_Left") {
+    waveAll_Left();
+    }
+    else if (doc["type"] == "waveAll_Right") {
+    waveAll_Right();
+    }
+
+        else if (doc["type"] == "setSpeed") {
         int newSpeed = doc["speed"];
         if (newSpeed >= 100 && newSpeed <= 1000) {
           stepDelay = newSpeed;
@@ -1175,4 +1488,160 @@ void broadcastServoUpdate(int servo, int angle, int pwm) {
   String message;
   serializeJson(doc, message);
   webSocket.broadcastTXT(message);
+}
+
+void waveHand() {
+  Serial.println("👋 Starting Wave Hand");
+
+  // Leg 1 on Left Side (PCA2: servos 0,1,2)
+  int coxa = 0, femur = 1, tibia = 2;
+
+  setServoAngle(femur, 0);     delay(500);  // lift femur
+  setServoAngle(tibia, 180);   delay(500);  // stretch tibia
+  setServoAngle(coxa, 180);    delay(500);  // swing out
+  setServoAngle(coxa, 0);      delay(500);  // swing in
+  setServoAngle(coxa, 90);     delay(500);  // back to center
+
+  for (int i = 0; i < 2; i++) {            // wave tibia 2 times
+    setServoAngle(tibia, 0);   delay(300);
+    setServoAngle(tibia, 180); delay(300);
+  }
+
+  setServoAngle(femur, 90);    // reset all to center
+  setServoAngle(tibia, 90);
+  setServoAngle(coxa, 90);
+
+  Serial.println("✅ Wave Hand finished");
+}
+
+void danceMove() {
+  Serial.println("💃 Starting Dance Move");
+
+  // Servo indexes
+  int L1_F = 1, L2_F = 4, L3_F = 7;     // left femurs
+  int R4_F = 10, R5_F = 13, R6_F = 16;  // right femurs
+  int L1_C = 0, L2_C = 3, L3_C = 6;
+  int R4_C = 9, R5_C = 12, R6_C = 15;
+
+  for (int repeat = 0; repeat < 3; repeat++) {
+    // Step 1: Lift left legs
+    setServoAngle(L1_F, 60);
+    setServoAngle(L2_F, 60);
+    setServoAngle(L3_F, 60);
+    delay(400);
+    setServoAngle(L1_F, 90);
+    setServoAngle(L2_F, 90);
+    setServoAngle(L3_F, 90);
+
+    // Step 2: Lift right legs
+    setServoAngle(R4_F, 120);
+    setServoAngle(R5_F, 120);
+    setServoAngle(R6_F, 120);
+    delay(400);
+    setServoAngle(R4_F, 90);
+    setServoAngle(R5_F, 90);
+    setServoAngle(R6_F, 90);
+
+    // Step 3: Shake body (Coxa swing left-right)
+    setServoAngle(L1_C, 60); setServoAngle(L2_C, 60); setServoAngle(L3_C, 60);
+    setServoAngle(R4_C, 120); setServoAngle(R5_C, 120); setServoAngle(R6_C, 120);
+    delay(400);
+
+    setServoAngle(L1_C, 120); setServoAngle(L2_C, 120); setServoAngle(L3_C, 120);
+    setServoAngle(R4_C, 60);  setServoAngle(R5_C, 60);  setServoAngle(R6_C, 60);
+    delay(400);
+
+    // Reset to center
+    setServoAngle(L1_C, 90); setServoAngle(L2_C, 90); setServoAngle(L3_C, 90);
+    setServoAngle(R4_C, 90); setServoAngle(R5_C, 90); setServoAngle(R6_C, 90);
+    delay(400);
+  }
+
+  Serial.println("✅ Dance finished");
+}
+
+void waveAll_Left() {
+  Serial.println("🌊 Starting Wave All");
+
+  // Servo mapping for each leg
+  int coxa[6]  = {0, 3, 6, 9, 12, 15};
+  int femur[6] = {1, 4, 7, 10, 13, 16};
+  int tibia[6] = {2, 5, 8, 11, 14, 17};
+
+  // Step 1: Lift all femurs
+  for (int i = 0; i < 6; i++) setServoAngle(femur[i], 20);
+  delay(500);
+
+  // Step 2: Stretch all tibias
+  for (int i = 0; i < 6; i++) setServoAngle(tibia[i], 150);
+  delay(500);
+
+  // Step 3: Swing all coxas
+  for (int i = 0; i < 6; i++) setServoAngle(coxa[i], 150);
+  delay(500);
+  for (int i = 0; i < 6; i++) setServoAngle(coxa[i], 20);
+  delay(500);
+  for (int i = 0; i < 6; i++) setServoAngle(coxa[i], 90);
+  delay(500);
+
+  // Step 4: Wave all tibias 3 times
+  for (int j = 0; j < 3; j++) {
+    for (int i = 0; i < 6; i++) setServoAngle(tibia[i], 0);
+    delay(300);
+    for (int i = 0; i < 6; i++) setServoAngle(tibia[i], 150);
+    delay(300);
+  }
+
+  // Step 5: Reset all joints
+  for (int i = 0; i < 6; i++) {
+    setServoAngle(femur[i], 90);
+    setServoAngle(tibia[i], 90);
+    setServoAngle(coxa[i], 90);
+  }
+  delay(500);
+
+  Serial.println("✅ Wave All finished");
+}
+
+void waveAll_Right() {
+  Serial.println("🌊 Starting Wave All");
+
+  // Servo mapping for each leg
+  int coxa[6]  = {0, 3, 6, 9, 12, 15};
+  int femur[6] = {1, 4, 7, 10, 13, 16};
+  int tibia[6] = {2, 5, 8, 11, 14, 17};
+
+  // Step 1: Lift all femurs
+  for (int i = 0; i < 6; i++) setServoAngle(femur[i], 150);
+  delay(500);
+
+  // Step 2: Stretch all tibias
+  for (int i = 0; i < 6; i++) setServoAngle(tibia[i], 20);
+  delay(500);
+
+  // Step 3: Swing all coxas
+  for (int i = 0; i < 6; i++) setServoAngle(coxa[i], 150);
+  delay(500);
+  for (int i = 0; i < 6; i++) setServoAngle(coxa[i], 50);
+  delay(500);
+  for (int i = 0; i < 6; i++) setServoAngle(coxa[i], 90);
+  delay(500);
+
+  // Step 4: Wave all tibias 3 times
+  for (int j = 0; j < 3; j++) {
+    for (int i = 0; i < 6; i++) setServoAngle(tibia[i], 0);
+    delay(300);
+    for (int i = 0; i < 6; i++) setServoAngle(tibia[i], 150);
+    delay(300);
+  }
+
+  // Step 5: Reset all joints
+  for (int i = 0; i < 6; i++) {
+    setServoAngle(femur[i], 90);
+    setServoAngle(tibia[i], 90);
+    setServoAngle(coxa[i], 90);
+  }
+  delay(500);
+
+  Serial.println("✅ Wave All finished");
 }
