@@ -649,6 +649,9 @@ const char* htmlPage = R"rawliteral(
             font-size: 0.9em;
             color: #718096;
         }
+        #speedSlider {
+          direction: rtl;   /* 👈 reverses slider direction */
+        }
     </style>
 </head>
 <body>
@@ -684,14 +687,14 @@ const char* htmlPage = R"rawliteral(
                 <div class="control-title">👣 Stride Length Control</div>
                 <div class="control-slider">
                     <label>Stride:</label>
-                    <input type="range" min="10" max="90" value="60" id="strideSlider"
+                    <input type="range" min="10" max="60" value="40" id="strideSlider"
                            onchange="updateStride(this.value)" oninput="updateStrideDisplay(this.value)">
-                    <div id="strideValue">60°</div>
+                    <div id="strideValue">40°</div>
                 </div>
                 <div class="slider-labels">
                     <span>🐢 Short (10°)</span>
-                    <span>👣 Normal (60°)</span>
-                    <span>🦘 Long (90°)</span>
+                    <span>👣 Normal (40°)</span>
+                    <span>🦘 Long (60°)</span>
                 </div>
             </div>
         </div>
@@ -729,6 +732,16 @@ const char* htmlPage = R"rawliteral(
         let sweeping = false;
         let walking = false;
         let currentSpeed = 500; // Default speed in milliseconds
+
+        const legLabels = {
+            1: { code: "FL", name: "Front-left" },
+            2: { code: "ML", name: "Mid-left" },
+            3: { code: "RL", name: "Rear-left" },
+            4: { code: "FR", name: "Front-right" },
+            5: { code: "MR", name: "Mid-right" },
+            6: { code: "RR", name: "Rear-right" }
+        };
+
 
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -791,28 +804,50 @@ const char* htmlPage = R"rawliteral(
         }
             
 
-        function createServoControls() {
-            const pca1Grid = document.getElementById('pca1Grid');
-            const pca2Grid = document.getElementById('pca2Grid');
-            
-            // Left side (PCA2): servos 0-8 (Legs 1,2,3)
-            for (let i = 0; i < 9; i++) {
-                const legNum = Math.floor(i / 3) + 1;
-                const jointNum = i % 3;
-                const jointNames = ['Coxa', 'Femur', 'Tibia'];
-                const card = createServoCard(i, 2, i, `L${legNum} ${jointNames[jointNum]}`);
-                pca2Grid.appendChild(card);
-            }
-            
-            // Right side (PCA1): servos 9-17 (Legs 4,5,6)
-            for (let i = 9; i < 18; i++) {
-                const legNum = Math.floor((i - 9) / 3) + 4;
-                const jointNum = (i - 9) % 3;
-                const jointNames = ['Coxa', 'Femur', 'Tibia'];
-                const card = createServoCard(i, 1, i - 9, `L${legNum} ${jointNames[jointNum]}`);
-                pca1Grid.appendChild(card);
-            }
-        }
+function createServoControls() {
+    const pca1Grid = document.getElementById('pca1Grid');
+    const pca2Grid = document.getElementById('pca2Grid');
+    
+    // Left side (PCA2): servos 0-8 (Legs 1,2,3)
+    for (let i = 0; i < 9; i++) {
+        const legNum = Math.floor(i / 3) + 1;
+        const jointNum = i % 3;
+        const jointNames = ['Coxa', 'Femur', 'Tibia'];
+        const label = legLabels[legNum];
+        const joint = jointNames[jointNum];
+
+        // Example: "L1 Coxa - Front-left(FL)"
+        const card = createServoCard(
+            i,
+            2,
+            i,
+            `L${legNum} ${joint} - ${label.name} (${label.code})`
+        );
+      
+        pca2Grid.appendChild(card);
+    }
+    
+    // Right side (PCA1): servos 9-17 (Legs 4,5,6)
+    for (let i = 9; i < 18; i++) {
+        const legNum = Math.floor((i - 9) / 3) + 4;
+        const jointNum = (i - 9) % 3;
+        const jointNames = ['Coxa', 'Femur', 'Tibia'];
+        const label = legLabels[legNum];
+        const joint = jointNames[jointNum];
+
+        // Example: "L4 Femur - Front-right(FR)"
+        const card = createServoCard(
+            i,
+            1,
+            i - 9,
+            `L${legNum} ${joint} - ${label.name} (${label.code})`
+        );
+
+        pca1Grid.appendChild(card);
+    }
+}
+
+
             function updateHeight(value) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         const message = JSON.stringify({
